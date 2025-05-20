@@ -1,0 +1,66 @@
+# version 속성은 더 이상 사용되지 않으므로 제거
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    # 시스템이 Apple Silicon Mac이라면 다음 줄 주석 해제
+    # platform: linux/arm64
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=change-me-please
+      # DB 타입을 sqlite로 임시 변경 (PostgreSQL 문제 해결 시 다시 postgresdb로 변경)
+      - DB_TYPE=sqlite
+      # PostgreSQL 설정은 주석 처리 (테스트 후 필요시 주석 해제)
+      # - DB_POSTGRESDB_HOST=postgres
+      # - DB_POSTGRESDB_PORT=5432
+      # - DB_POSTGRESDB_DATABASE=n8n
+      # - DB_POSTGRESDB_USER=n8n
+      # - DB_POSTGRESDB_PASSWORD=n8n
+      # 이메일 설정은 당장 필요하지 않다면 주석 처리
+      # - N8N_EMAIL_MODE=smtp
+      # - N8N_SMTP_HOST=smtp.example.com
+      # - N8N_SMTP_PORT=587
+      # - N8N_SMTP_USER=user@example.com
+      # - N8N_SMTP_PASS=password
+      # - N8N_SMTP_SENDER=n8n@example.com
+    volumes:
+      - n8n_data:/home/node/.n8n
+    # 일단 PostgreSQL 의존성 제거 (SQLite 사용 시)
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
+    networks:
+      - n8n-network
+
+  # PostgreSQL 설정 - 나중에 필요할 때 주석 해제
+  # postgres:
+  #   image: postgres:14  # 더 안정적인 14 버전으로 변경
+  #   # 시스템이 Apple Silicon Mac이라면 다음 줄 주석 해제
+  #   # platform: linux/arm64
+  #   restart: always
+  #   environment:
+  #     - POSTGRES_DB=n8n
+  #     - POSTGRES_USER=n8n
+  #     - POSTGRES_PASSWORD=n8n
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - n8n-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U n8n"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 30s  # 초기 시작 시간 추가
+
+volumes:
+  n8n_data:
+  postgres_data:
+
+networks:
+  n8n-network:
+    driver: bridge
