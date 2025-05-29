@@ -14,6 +14,9 @@ services:
       - N8N_ENCRYPTION_KEY=change-me-please
       # DB 타입을 sqlite로 임시 변경 (PostgreSQL 문제 해결 시 다시 postgresdb로 변경)
       - DB_TYPE=sqlite
+      # 인증 완전 해제 (로그인 없이 바로 접속)
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_USER_MANAGEMENT_DISABLED=true
       # PostgreSQL 설정은 주석 처리 (테스트 후 필요시 주석 해제)
       # - DB_POSTGRESDB_HOST=postgres
       # - DB_POSTGRESDB_PORT=5432
@@ -35,6 +38,27 @@ services:
     #     condition: service_healthy
     networks:
       - n8n-network
+
+  # Cloudflare Tunnel 서비스 (고정 URL용 - DuckDNS)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # 시스템이 Apple Silicon Mac이라면 다음 줄 주석 해제
+    platform: linux/arm64
+    restart: always
+    # 고정 터널 실행 (config.yml 사용)
+    command: tunnel run
+    depends_on:
+      - n8n
+    networks:
+      - n8n-network
+    volumes:
+      # 호스트의 cloudflare 설정 파일들을 컨테이너로 마운트
+      - ~/.cloudflared:/home/nonroot/.cloudflared:ro
+    environment:
+      - TUNNEL_ORIGIN_ENABLE_HTTP2=true
+    # 로그 확인을 위해 출력 유지
+    tty: true
+    stdin_open: true
 
   # PostgreSQL 설정 - 나중에 필요할 때 주석 해제
   # postgres:
