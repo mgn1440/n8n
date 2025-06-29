@@ -1,90 +1,131 @@
-# version 속성은 더 이상 사용되지 않으므로 제거
 services:
-  n8n:
-    image: n8nio/n8n:latest
-    # 시스템이 Apple Silicon Mac이라면 다음 줄 주석 해제
-    # platform: linux/arm64
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
     restart: always
-    ports:
-      - "5678:5678"
     environment:
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - NODE_ENV=production
-      - N8N_ENCRYPTION_KEY=change-me-please
-      # DB 타입을 sqlite로 임시 변경 (PostgreSQL 문제 해결 시 다시 postgresdb로 변경)
-      - DB_TYPE=sqlite
-      # 인증 완전 해제 (로그인 없이 바로 접속)
-      - N8N_BASIC_AUTH_ACTIVE=false
-      - N8N_USER_MANAGEMENT_DISABLED=true
-      # PostgreSQL 설정은 주석 처리 (테스트 후 필요시 주석 해제)
-      # - DB_POSTGRESDB_HOST=postgres
-      # - DB_POSTGRESDB_PORT=5432
-      # - DB_POSTGRESDB_DATABASE=n8n
-      # - DB_POSTGRESDB_USER=n8n
-      # - DB_POSTGRESDB_PASSWORD=n8n
-      # 이메일 설정은 당장 필요하지 않다면 주석 처리
-      # - N8N_EMAIL_MODE=smtp
-      # - N8N_SMTP_HOST=smtp.example.com
-      # - N8N_SMTP_PORT=587
-      # - N8N_SMTP_USER=user@example.com
-      # - N8N_SMTP_PASS=password
-      # - N8N_SMTP_SENDER=n8n@example.com
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-      - n8n_data:/home/node/.n8n
-    # 일단 PostgreSQL 의존성 제거 (SQLite 사용 시)
-    # depends_on:
-    #   postgres:
-    #     condition: service_healthy
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - n8n-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
-  # Cloudflare Tunnel 서비스 (고정 URL용 - DuckDNS)
+  # N8N 워크플로우 자동화 도구
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    ports:
+      - "${N8N_PORT}:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      
+      # PostgreSQL 데이터베이스 설정
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_SCHEMA=${POSTGRES_SCHEMA}
+      
+      # 도메인 설정
+      - WEBHOOK_URL=https://${N8N_DOMAIN}
+      - N8N_EDITOR_BASE_URL=https://${N8N_DOMAIN}
+      - N8N_HOST=${N8N_DOMAIN}
+      
+      # 인증 및 보안 설정
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE}
+      - N8N_USER_MANAGEMENT_DISABLED=${N8N_USER_MANAGEMENT_DISABLED}
+      
+      # 성능 및 로깅 설정
+      - N8N_METRICS=${N8N_METRICS}
+      - N8N_LOG_LEVEL=${N8N_LOG_LEVEL}
+      - N8N_LOG_OUTPUT=${N8N_LOG_OUTPUT}
+      
+      # 워크플로우 설정
+      - EXECUTIONS_TIMEOUT=${EXECUTIONS_TIMEOUT}
+      - EXECUTIONS_TIMEOUT_MAX=${EXECUTIONS_TIMEOUT_MAX}
+      - N8N_DEFAULT_BINARY_DATA_MODE=${N8N_DEFAULT_BINARY_DATA_MODE}
+      
+      # 보안 설정
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE}
+      - N8N_DISABLE_PRODUCTION_MAIN_PROCESS=${N8N_DISABLE_PRODUCTION_MAIN_PROCESS}
+      
+      # 윈도우 호환성 설정
+      - TZ=${TZ}
+      
+      # 🚀 Playwright API 설정 (새로 추가)
+      - PLAYWRIGHT_API_URL=http://host.docker.internal:3001
+      - NODE_FUNCTION_ALLOW_EXTERNAL=playwright,puppeteer
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - n8n-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 🚀 호스트 네트워크 접근 설정 (새로 추가)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Cloudflare Tunnel 서비스
   cloudflared:
     image: cloudflare/cloudflared:latest
-    # 시스템이 Apple Silicon Mac이라면 다음 줄 주석 해제
-    platform: linux/arm64
     restart: always
-    # 고정 터널 실행 (config.yml 사용)
-    command: tunnel run
+    command: tunnel --no-autoupdate run ${TUNNEL_NAME}
     depends_on:
       - n8n
     networks:
       - n8n-network
     volumes:
-      # 호스트의 cloudflare 설정 파일들을 컨테이너로 마운트
-      - ~/.cloudflared:/home/nonroot/.cloudflared:ro
+      - ./cloudflared:/etc/cloudflared:ro
     environment:
       - TUNNEL_ORIGIN_ENABLE_HTTP2=true
-    # 로그 확인을 위해 출력 유지
-    tty: true
-    stdin_open: true
+      - TUNNEL_LOGFILE=/dev/stdout
+      - TUNNEL_LOGLEVEL=${TUNNEL_LOG_LEVEL}
 
-  # PostgreSQL 설정 - 나중에 필요할 때 주석 해제
-  # postgres:
-  #   image: postgres:14  # 더 안정적인 14 버전으로 변경
-  #   # 시스템이 Apple Silicon Mac이라면 다음 줄 주석 해제
-  #   # platform: linux/arm64
+  # 🚀 선택사항: 호스트 대신 컨테이너로 Playwright API 실행
+  # 아래 주석을 해제하고 사용하거나, 호스트에서 직접 실행하세요
+  # playwright-api:
+  #   build:
+  #     context: ./playwright-server
+  #     dockerfile: Dockerfile
   #   restart: always
+  #   ports:
+  #     - "3001:3001"
   #   environment:
-  #     - POSTGRES_DB=n8n
-  #     - POSTGRES_USER=n8n
-  #     - POSTGRES_PASSWORD=n8n
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
+  #     - PORT=3001
+  #     - MAX_BROWSERS=3
+  #     - NODE_ENV=production
+  #   shm_size: 2gb
   #   networks:
   #     - n8n-network
   #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U n8n"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #     start_period: 30s  # 초기 시작 시간 추가
+  #     test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
 
 volumes:
   n8n_data:
+    driver: local
   postgres_data:
+    driver: local
 
 networks:
   n8n-network:
     driver: bridge
+    name: n8n-network

@@ -1,0 +1,20 @@
+# 긴급 수정된 config.yml - 404 문제 해결
+tunnel: 9e357ba2-4dd0-463e-b2fa-a5fec4ef62a9
+credentials-file: /etc/cloudflared/9e357ba2-4dd0-463e-b2fa-a5fec4ef62a9.json
+
+# ⚠️  중요: 이 ingress 설정이 핵심입니다!
+ingress:
+  # N8N 라우팅 (이 부분이 사라져서 404 발생!)
+  - hostname: n8n.demodev.io
+    service: http://n8n:5678
+    originRequest:
+      noTLSVerify: true
+      http2Origin: true
+      connectTimeout: 30s
+      
+  # 기본 404 응답 (맨 마지막에 있어야 함)
+  - service: http_status:404
+
+# 추가 설정
+metrics: 0.0.0.0:8081
+logLevel: info
